@@ -91,8 +91,9 @@ int close_unused_com_pipe(int son_number, int com_pipe[][2], int com_pipe_size){
     return 0;
 }
 
-int do_command(struct cmdline *l) {
-    if(strcmp(l->seq[0][0], "exit") == 0){
+int do_command(struct cmdline *l, pid_t *not_closed, int *nb_not_closed) {
+    
+    if(*(l->seq) != 0 && strcmp(l->seq[0][0], "exit") == 0){
         return 1;
     }
     
@@ -157,21 +158,34 @@ int do_command(struct cmdline *l) {
     }
     /* Wait for every children */
     if(DEBUG) printf("Father waiting\n");
-    while (wait(&status) > 0);
-    /*for(i=0; i<nb_se; i++){
-        printf("Father waiting for %d\n", i);
-        if(waitpid(children_pids[i], &status, 0) == -1){
-            printf("Error waiting for son %d - pid %d\n", i, children_pids[i]);
+    if(!l->background){
+        //while (wait(&status) > 0);
+        for(i=0; i<nb_se; i++){
+            if(DEBUG) printf("Father waiting for %d\n", i);
+            if(waitpid(children_pids[i], &status, 0) == -1){
+                printf("Error waiting for son %d - pid %d\n", i, children_pids[i]);
+            }
         }
-    }*/
+    }else{
+        not_closed = malloc(nb_se * sizeof(pid_t));
+        for(i=0; i<nb_se; i++){
+            not_closed[i] = children_pids[i];
+        }
+        nb_not_closed = nb_se;
+    }
+    
         
     
     return 0;
 }
 
 int main() {
+    pid_t *not_closed_global = malloc(0);
+    int nb_not_closed_global = 0;
     while (1) {
         struct cmdline *l;
+        pid_t *not_closed;
+        int nb_not_closed=0;
         int i, j;
 
         printf("shell> ");
@@ -189,11 +203,25 @@ int main() {
             continue;
         }
 
-        switch(do_command(l) !=0){
+        switch(do_command(l, not_closed, &nb_not_closed)){
             case 1:
+                free(not_closed);
+                free(not_closed_global);
                 return 0;
                 break;
             case 0:
+                if(nb_not_closed != 0){
+                    not_closed_global = realloc(not_closed_global, (nb_not_closed+nb_not_closed_global)*sizeof(pid_t));
+                    printf("Coucou\n");
+                    if(not_closed_global == NULL){
+                        printf("Realloc failed\n");
+                    }
+                    for(i=0; i<nb_not_closed; i++){
+                        not_closed_global[nb_not_closed_global + i] = not_closed[i];
+                    }
+                    nb_not_closed_global += nb_not_closed;
+                    free(not_closed);
+                }
                 break;
             default:
                 printf("Command failed\n");

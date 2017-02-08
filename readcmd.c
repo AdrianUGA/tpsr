@@ -165,6 +165,8 @@ struct cmdline *readcmd(void)
 		}
 		return static_cmdline = 0;
 	}
+        
+        
 
 	cmd = xmalloc(sizeof(char *));
 	cmd[0] = 0;
@@ -180,6 +182,8 @@ struct cmdline *readcmd(void)
 		static_cmdline = s = xmalloc(sizeof(struct cmdline));
 	else
 		freecmd(s);
+        
+        s->background = 0;
 	s->err = 0;
 	s->in = 0;
 	s->out = 0;
@@ -187,6 +191,12 @@ struct cmdline *readcmd(void)
 
 	i = 0;
 	while ((w = words[i++]) != 0) {
+            if(words[i] == 0){
+                if(w[strlen(w)-1] == '&'){
+                    w[strlen(w)-1] = '\0';
+                    s->background = 1;
+                }
+            }
 		switch (w[0]) {
 		case '<':
 			/* Tricky : the word can only be "<" */
