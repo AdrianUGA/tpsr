@@ -14,12 +14,23 @@
 #include <signal.h>
 #include <string.h>
 
-#define DEBUG 0
+#define DEBUG 1
 
 //TODO Pas de bog avec enter, differencier > et >>
 
+pid_t *g_fg_children = NULL;
+int *g_nb_fg_children = NULL;
 
 void pass(){}
+void sigint(){ 
+    int i;
+    for (i=0; i<*g_nb_fg_children; i++){
+        printf("%d ", g_fg_children[i]);
+    }
+    printf("\n");
+    
+}
+void sigtstp() { printf("SIGTSTP\n"); }
 
 /*
  * Count the number of sequences for the command <l>
@@ -54,7 +65,7 @@ int connect_stdios(int son_number, struct cmdline *l, int com_pipe[][2], int com
     /* Set up stdout */
     if(son_number == com_pipe_size-1){
         if(l->out){
-            int f = open(l->out, O_WRONLY | O_CREAT ); // TODO set user permissions //TODO File created before command exectution
+            int f = open(l->out, O_WRONLY | O_CREAT, 0644); // TODO set user permissions //TODO File created before command exectution
             if(f<0){
                 printf("open error. in : %s\n", l->out);
                 return -1;
@@ -100,6 +111,10 @@ int do_command(struct cmdline *l, pid_t *not_closed, int *nb_not_closed) {
     int i, status, nb_se = nb_seq(l), com_pipe[nb_se-1][2];
     pid_t child_pid, children_pids[nb_se];
     
+    /* Global variables for handlers */
+    g_fg_children = children_pids;
+    g_nb_fg_children = &nb_se;
+    
     sigset_t signal_set; int sig;
     sigemptyset(&signal_set);
     sigaddset(&signal_set, SIGUSR1);
@@ -108,6 +123,7 @@ int do_command(struct cmdline *l, pid_t *not_closed, int *nb_not_closed) {
     for(i=0; i<nb_se-1; i++){
         if(pipe(com_pipe[i]) <0){
             printf("pipe error. errno %d. Number %d\n", errno, i);
+            return -1;
         }
     }
     
@@ -139,6 +155,7 @@ int do_command(struct cmdline *l, pid_t *not_closed, int *nb_not_closed) {
                 printf("Erreur execvp errno : %d %d\n", errno, ENOENT);
                 return-1;
             }
+            
         }else{ /* Father */
             if(DEBUG) printf("Fork %d done\n", i);
             children_pids[i] = child_pid;
@@ -152,12 +169,12 @@ int do_command(struct cmdline *l, pid_t *not_closed, int *nb_not_closed) {
     }
     
     /* Start the children */
-    sleep(1); //TODO The child never receives the signal otherwise
+    sleep(1); //TODO The children never receive the signal otherwise
     for(i=0; i<nb_se; i++){
         kill(children_pids[i], SIGUSR1);
     }
     /* Wait for every children */
-    if(DEBUG) printf("Father waiting\n");
+    if(DEBUG) printf("Father waiting. Bg=%d\n", l->background);
     if(!l->background){
         //while (wait(&status) > 0);
         for(i=0; i<nb_se; i++){
@@ -168,18 +185,23 @@ int do_command(struct cmdline *l, pid_t *not_closed, int *nb_not_closed) {
         }
     }else{
         not_closed = malloc(nb_se * sizeof(pid_t));
+        if(DEBUG) printf("Father saving bg pids\n");
         for(i=0; i<nb_se; i++){
             not_closed[i] = children_pids[i];
         }
-        nb_not_closed = nb_se;
+        if(DEBUG) printf("pids saved\n");
+        *nb_not_closed = nb_se;
     }
     
         
-    
+    g_nb_fg_children = NULL;
     return 0;
 }
 
 int main() {
+    signal(SIGINT, sigint);
+    signal(SIGTSTP, sigtstp);
+    
     pid_t *not_closed_global = malloc(0);
     int nb_not_closed_global = 0;
     while (1) {
@@ -231,19 +253,5 @@ int main() {
         continue;
         
         
-        if (l->in) printf("in: %s\n", l->in);
-        if (l->out) printf("out: %s\n", l->out);
-
-        
-        
-        /* Display each command of the pipe */
-        for (i = 0; l->seq[i] != 0; i++) {
-            char **cmd = l->seq[i];
-            printf("seq[%d]: ", i);
-            for (j = 0; cmd[j] != 0; j++) {
-                printf("%s ", cmd[j]);
-            }
-            printf("\n");
-        }
     }
 }
